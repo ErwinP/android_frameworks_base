@@ -102,12 +102,13 @@ public class LockPatternView extends View {
     private boolean mEnableHapticFeedback = true;
     private boolean mPatternInProgress = false;
 
-    private float mDiameterFactor = 0.10f; // TODO: move to attrs
+    private float mDiameterFactor = 0.10f; // TODO: move to attrs (this is the diameter of the line connecting the dots)
     private final int mStrokeAlpha = 128;
     private float mHitFactor = 0.6f;
 
-    private float mSquareWidth;
+    private float mSquareWidth;   //this is getting resized at line 451, so what we need to find, is the def. of mPaddingLeft etc
     private float mSquareHeight;
+    private int mPaddingBottom = 20; //"push" the lockscreen a bit up, starting from down under. Used in line 454
 
     private Bitmap mBitmapBtnDefault;
     private Bitmap mBitmapBtnTouched;
@@ -911,6 +912,7 @@ public class LockPatternView extends View {
         final float squareWidth = mSquareWidth;
         final float squareHeight = mSquareHeight;
 
+        //calculation of the diameter
         float radius = (squareWidth * mDiameterFactor * 0.5f);
         mPathPaint.setStrokeWidth(radius);
 
