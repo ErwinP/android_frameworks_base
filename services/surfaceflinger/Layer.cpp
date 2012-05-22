@@ -41,12 +41,10 @@
 
 #ifdef QCOM_HARDWARE
 #include <qcom_ui.h>
+#define SHIFT_SRC_TRANSFORM 4
 #endif
 
 #define DEBUG_RESIZE    0
-#ifdef QCOM_HARDWARE
-#define SHIFT_SRC_TRANSFORM 4
-#endif
 
 namespace android {
 
@@ -325,11 +323,13 @@ void Layer::onDraw(const Region& clip) const
         return;
 	}
 
+#ifdef DECIDE_TEXTURE_TARGET
     GLuint currentTextureTarget = mSurfaceTexture->getCurrentTextureTarget();
+#endif
 #endif
 
     if (!isProtected()) {
-#ifdef QCOM_HARDWARE
+#ifdef DECIDE_TEXTURE_TARGET
         glBindTexture(currentTextureTarget, mTextureName);
 #else
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, mTextureName);
@@ -339,7 +339,7 @@ void Layer::onDraw(const Region& clip) const
             // TODO: we could be more subtle with isFixedSize()
             filter = GL_LINEAR;
         }
-#ifdef QCOM_HARDWARE
+#ifdef DECIDE_TEXTURE_TARGET
         glTexParameterx(currentTextureTarget, GL_TEXTURE_MAG_FILTER, filter);
         glTexParameterx(currentTextureTarget, GL_TEXTURE_MIN_FILTER, filter);
 #else
@@ -350,13 +350,13 @@ void Layer::onDraw(const Region& clip) const
         glLoadMatrixf(mTextureMatrix);
         glMatrixMode(GL_MODELVIEW);
         glDisable(GL_TEXTURE_2D);
-#ifdef QCOM_HARDWARE
+#ifdef DECIDE_TEXTURE_TARGET
         glEnable(currentTextureTarget);
 #else
         glEnable(GL_TEXTURE_EXTERNAL_OES);
 #endif
     } else {
-#ifdef QCOM_HARDWARE
+#ifdef DECIDE_TEXTURE_TARGET
         glBindTexture(currentTextureTarget, mFlinger->getProtectedTexName());
 #else
         glBindTexture(GL_TEXTURE_2D, mFlinger->getProtectedTexName());
@@ -364,7 +364,7 @@ void Layer::onDraw(const Region& clip) const
         glMatrixMode(GL_TEXTURE);
         glLoadIdentity();
         glMatrixMode(GL_MODELVIEW);
-#ifdef QCOM_HARDWARE
+#ifdef DECIDE_TEXTURE_TARGET
         glEnable(currentTextureTarget);
 #else
         glDisable(GL_TEXTURE_EXTERNAL_OES);
@@ -501,7 +501,7 @@ void Layer::lockPageFlip(bool& recomputeVisibleRegions)
             mFlinger->signalEvent();
         }
 
-#ifdef QCOM_HARDWARE
+#ifdef DECIDE_TEXTURE_TARGET
         // While calling updateTexImage() from SurfaceFlinger, let it know
         // by passing an extra parameter
         // This will be true always.
