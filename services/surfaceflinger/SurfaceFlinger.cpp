@@ -2001,22 +2001,29 @@ status_t SurfaceFlinger::directRenderScreenToTextureLocked(DisplayID dpy,
     const DisplayHardware& hw(graphicPlane(dpy).displayHardware());
 
     // use device framebuffer in /dev/graphics/fb0
-    size_t offset;
+    ssize_t offset;
     uint32_t bytespp, format, gl_format, gl_type;
     size_t size = 0;
     struct fb_var_screeninfo vinfo;
+    struct fb_fix_screeninfo finfo;
     const char* fbpath = "/dev/graphics/fb0";
-    int fb = open(fbpath, O_RDONLY);
+    int fb;
     void const* mapbase = MAP_FAILED;
     ssize_t mapsize = -1;
 
-    if (fb < 0) {
+    if ((fb = open(fbpath, O_RDONLY)) < 0) {
         LOGE("Failed to open framebuffer");
         return INVALID_OPERATION;
     }
 
     if (ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) < 0) {
-        LOGE("Failed to get framebuffer info");
+        LOGE("Failed to get framebuffer vinfo");
+        close(fb);
+        return INVALID_OPERATION;
+    }
+
+    if (ioctl(fb, FBIOGET_FSCREENINFO, &finfo) < 0) {
+        LOGE("Failed to get framebuffer finfo");
         close(fb);
         return INVALID_OPERATION;
     }
@@ -2043,17 +2050,18 @@ status_t SurfaceFlinger::directRenderScreenToTextureLocked(DisplayID dpy,
         break;
     }
 
-    offset = (vinfo.xoffset + vinfo.yoffset * vinfo.xres) * bytespp;
-    size = vinfo.xres * vinfo.yres * bytespp;
+    offset = vinfo.yoffset * finfo.line_length;
+    size = vinfo.yres * vinfo.xres * bytespp;
 
-    mapsize = offset + size;
-    mapbase = mmap(0, mapsize, PROT_READ, MAP_PRIVATE, fb, 0);
+    mapbase = mmap(0, size, PROT_READ, MAP_PRIVATE, fb, offset);
     close(fb);
+
     if (mapbase == MAP_FAILED) {
         return INVALID_OPERATION;
     }
 
-    void const* fbbase = (void *)((char const *)mapbase + offset);
+    char const* fbbase = (char *)((char const *)mapbase);
+
     GLfloat u = 1;
     GLfloat v = 1;
 
@@ -2062,27 +2070,26 @@ status_t SurfaceFlinger::directRenderScreenToTextureLocked(DisplayID dpy,
     glGenTextures(1, &tname);
     glBindTexture(GL_TEXTURE_2D, tname);
     glTexImage2D(GL_TEXTURE_2D, 0, gl_format,
-            hw_w, hw_h, 0, gl_format, GL_UNSIGNED_BYTE, 0);
+            vinfo.xres, vinfo.yres, 0, gl_format, GL_UNSIGNED_BYTE, 0);
     if (glGetError() != GL_NO_ERROR) {
         while ( glGetError() != GL_NO_ERROR ) ;
-        GLint tw = (2 << (31 - clz(hw_w)));
-        GLint th = (2 << (31 - clz(hw_h)));
+        GLint tw = (2 << (31 - clz(vinfo.xres)));
+        GLint th = (2 << (31 - clz(vinfo.yres)));
         glTexImage2D(GL_TEXTURE_2D, 0, gl_format,
                 tw, th, 0, gl_format, GL_UNSIGNED_BYTE, 0);
-        u = GLfloat(hw_w) / tw;
-        v = GLfloat(hw_h) / th;
+        u = GLfloat(vinfo.xres) / tw;
+        v = GLfloat(vinfo.yres) / th;
     }
 
     // write fb data to image buffer texture (reverse order)
-    GLubyte* imageData = (GLubyte*)malloc(size);
+    GLubyte* imageData = (GLubyte*) malloc(size);
+
     if (imageData) {
-        void *ptr = imageData;
-        uint32_t rowlen = hw_w * bytespp;
-        offset = size;
-        for (uint32_t j = hw_h; j > 0; j--) {
-            offset -= rowlen;
+        void *ptr;
+        uint32_t rowlen = vinfo.xres * bytespp;
+
+        for (ptr = imageData, offset = size - rowlen; offset >= 0; ptr += rowlen, offset -= rowlen) {
             memcpy(ptr, fbbase + offset, rowlen);
-            ptr += rowlen;
         }
 
         // write image buffer to the texture
@@ -2117,7 +2124,7 @@ status_t SurfaceFlinger::directRenderScreenToTextureLocked(DisplayID dpy,
     hw.compositionComplete();
 
     // done
-    munmap((void *)mapbase, mapsize);
+    munmap((void *)mapbase, size);
 
     *textureName = tname;
     *uOut = u;
@@ -2579,6 +2586,7 @@ status_t SurfaceFlinger::directCaptureScreenImplLocked(DisplayID dpy,
     ssize_t mapsize = -1;
 
     struct fb_var_screeninfo vinfo;
+    struct fb_fix_screeninfo finfo;
     const char* fbpath = "/dev/graphics/fb0";
 
     // only one display supported for now
@@ -2602,7 +2610,8 @@ status_t SurfaceFlinger::directCaptureScreenImplLocked(DisplayID dpy,
         return INVALID_OPERATION;
     }
 
-    if (ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) < 0) {
+    if (ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) < 0
+        || ioctl(fb, FBIOGET_FSCREENINFO, &finfo) < 0) {
         LOGE("Failed to get framebuffer info");
         close(fb);
         return INVALID_OPERATION;
@@ -2623,7 +2632,7 @@ status_t SurfaceFlinger::directCaptureScreenImplLocked(DisplayID dpy,
         break;
     }
 
-    size_t offset = (vinfo.xoffset + vinfo.yoffset * vinfo.xres) * bytespp;
+    size_t offset = vinfo.yoffset * finfo.line_length;
     size_t size = vinfo.xres * vinfo.yres * bytespp;
     mapsize = offset + size;
     mapbase = mmap(0, mapsize, PROT_READ, MAP_PRIVATE, fb, 0);
