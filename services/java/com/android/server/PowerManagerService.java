@@ -518,10 +518,13 @@ public class PowerManagerService extends IPowerManager.Stub
                 // recalculate everything
                 setScreenOffTimeoutsLocked();
 
-                mElectronBeamAnimationOn = Settings.System.getInt(mContext.getContentResolver(),
-                        ELECTRON_BEAM_ANIMATION_ON, 0) != 0;
-                mElectronBeamAnimationOff = Settings.System.getInt(mContext.getContentResolver(),
-                        ELECTRON_BEAM_ANIMATION_OFF, 1) != 0;
+                //read user settings and device config to control animations availability
+                mElectronBeamAnimationOn = (Settings.System.getInt(mContext.getContentResolver(),
+                        ELECTRON_BEAM_ANIMATION_ON, 0) != 0) &&
+                        mContext.getResources().getInteger(com.android.internal.R.integer.config_screenOnAnimation) >= 0;
+                mElectronBeamAnimationOff = (Settings.System.getInt(mContext.getContentResolver(),
+                        ELECTRON_BEAM_ANIMATION_OFF, 1) != 0) &&
+                        mContext.getResources().getBoolean(com.android.internal.R.bool.config_screenOffAnimation);
 
                 mAnimationSetting = 0;
                 if (mElectronBeamAnimationOff) {
@@ -2198,6 +2201,8 @@ public class PowerManagerService extends IPowerManager.Stub
         float curValue;
         float delta;
         boolean animating;
+        Handler mElectronBeamOnHandler;
+        HandlerThread mElectronBeamOnHandlerThread;
 
         BrightnessState(int m) {
             mask = m;
@@ -2311,7 +2316,7 @@ public class PowerManagerService extends IPowerManager.Stub
                 final boolean electrifying =
                         ((mElectronBeamAnimationOff && turningOff) ||
                          (mElectronBeamAnimationOn && turningOn));
-                if (!electrifying && mAnimateScreenLights) {
+                if (!electrifying && (mAnimateScreenLights || !turningOff)) {
                     long now = SystemClock.uptimeMillis();
                     boolean more = mScreenBrightness.stepLocked();
                     if (more) {
@@ -2329,14 +2334,47 @@ public class PowerManagerService extends IPowerManager.Stub
                         mScreenBrightness.jumpToTargetLocked();
                     } else if (turningOn) {
                         if (electrifying) {
-                            jumpToTarget();
-                            nativeStartSurfaceFlingerOnAnimation(mAnimationSetting);
-                            animating = false;
+                            int delay=mContext.getResources().getInteger(com.android.internal.R.integer.config_screenOnAnimation);
+                            if(delay>0) {
+                                startElectronBeamDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        startElectronBeamOnAnimation();
+                                        synchronized(mElectronBeamOnHandler) {
+                                            mElectronBeamOnHandler.notifyAll();
+                                        }
+                                    }
+                                },delay);
+                            } else {
+                                startElectronBeamOnAnimation();
+                            }
                         } else {
                             mScreenBrightness.jumpToTargetLocked();
                         }
                     }
                 }
+            }
+        }
+
+        private void startElectronBeamOnAnimation() {
+            jumpToTarget();
+            nativeStartSurfaceFlingerOnAnimation(mAnimationSetting);
+            mScreenBrightness.animating = false;
+        }
+
+        private void startElectronBeamDelayed(Runnable animation, int delay) {
+            mElectronBeamOnHandlerThread = new HandlerThread("PowerManagerService.mScreenBrightness.mElectronBeamOnHandlerThread");
+            mElectronBeamOnHandlerThread.start();
+            mElectronBeamOnHandler = new Handler(mElectronBeamOnHandlerThread.getLooper());
+            mElectronBeamOnHandler.postDelayed(animation,delay);
+            try {
+                synchronized(mElectronBeamOnHandler) {
+                    mElectronBeamOnHandler.wait();
+                }
+            } catch (InterruptedException e) {
+                Slog.d(TAG,"mElectronBeamOnHandler.wait() interrupted");
+                Slog.d(TAG,Log.getStackTraceString(e));
+                e.printStackTrace();
             }
         }
     }
