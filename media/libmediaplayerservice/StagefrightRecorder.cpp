@@ -1379,6 +1379,7 @@ status_t StagefrightRecorder::setupCameraSource(
             atoi(value)) {
             useMeta = false;
         }
+        useMeta = false;
 #endif
         *cameraSource = CameraSource::CreateFromCamera(
                 mCamera, mCameraProxy, mCameraId, videoSize, mFrameRate,
