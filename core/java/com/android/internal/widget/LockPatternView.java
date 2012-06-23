@@ -108,7 +108,6 @@ public class LockPatternView extends View {
 
     private float mSquareWidth;   //this is getting resized at line 451, so what we need to find, is the def. of mPaddingLeft etc
     private float mSquareHeight;
-    private int mPaddingBottom = 20; //"push" the lockscreen a bit up, starting from down under. Used in line 454
 
     private Bitmap mBitmapBtnDefault;
     private Bitmap mBitmapBtnTouched;
